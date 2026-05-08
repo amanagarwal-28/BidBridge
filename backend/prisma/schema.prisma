@@ -1,0 +1,436 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+enum Role {
+  CLIENT
+  FREELANCER
+  ADMIN
+}
+
+enum ProjectStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  CLOSED
+}
+
+enum BidStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum ContractStatus {
+  ACTIVE
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  BID_RECEIVED
+  BID_ACCEPTED
+  BID_REJECTED
+  CONTRACT_CREATED
+  CONTRACT_COMPLETED
+  PAYMENT_RECEIVED
+  PAYMENT_RELEASED
+  REVIEW_RECEIVED
+  PROJECT_CLOSED
+  SYSTEM
+}
+
+enum FraudType {
+  SPAM_BIDDING
+  DUPLICATE_ACCOUNT
+  FAKE_REVIEW
+  ABNORMAL_ACTIVITY
+}
+
+// ─────────────────────────────────────────────
+// USERS (base table – normalized)
+// ─────────────────────────────────────────────
+model User {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  email     String   @unique @db.VarChar(255)
+  password  String   @db.VarChar(255)
+  role      Role
+  isActive  Boolean  @default(true)
+  isBlocked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client     Client?
+  freelancer Freelancer?
+  admin      Admin?
+
+  sentNotifications     Notification[] @relation("NotificationSender")
+  receivedNotifications Notification[] @relation("NotificationReceiver")
+  fraudReports          FraudReport[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// CLIENT PROFILE (1-1 with User)
+// ─────────────────────────────────────────────
+model Client {
+  id          String  @id @default(uuid()) @db.VarChar(36)
+  userId      String  @unique @db.VarChar(36)
+  firstName   String  @db.VarChar(100)
+  lastName    String  @db.VarChar(100)
+  company     String? @db.VarChar(255)
+  phone       String? @db.VarChar(20)
+  country     String? @db.VarChar(100)
+  avatarUrl   String? @db.VarChar(500)
+  bio         String? @db.Text
+  totalSpent  Decimal @default(0) @db.Decimal(12, 2)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects Project[]
+  reviews  Review[]  @relation("ClientReviews")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("clients")
+}
+
+// ─────────────────────────────────────────────
+// FREELANCER PROFILE (1-1 with User)
+// ─────────────────────────────────────────────
+model Freelancer {
+  id             String  @id @default(uuid()) @db.VarChar(36)
+  userId         String  @unique @db.VarChar(36)
+  firstName      String  @db.VarChar(100)
+  lastName       String  @db.VarChar(100)
+  phone          String? @db.VarChar(20)
+  country        String? @db.VarChar(100)
+  avatarUrl      String? @db.VarChar(500)
+  bio            String? @db.Text
+  hourlyRate     Decimal @default(0) @db.Decimal(10, 2)
+  totalEarned    Decimal @default(0) @db.Decimal(12, 2)
+  availableForWork Boolean @default(true)
+  avgRating      Decimal @default(0) @db.Decimal(3, 2)
+  totalReviews   Int     @default(0)
+  completedJobs  Int     @default(0)
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills     FreelancerSkill[]
+  portfolio  Portfolio[]
+  bids       Bid[]
+  contracts  Contract[]
+  reviews    Review[]           @relation("FreelancerReviews")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([avgRating])
+  @@map("freelancers")
+}
+
+// ─────────────────────────────────────────────
+// ADMIN PROFILE (1-1 with User)
+// ─────────────────────────────────────────────
+model Admin {
+  id     String @id @default(uuid()) @db.VarChar(36)
+  userId String @unique @db.VarChar(36)
+  name   String @db.VarChar(200)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admins")
+}
+
+// ─────────────────────────────────────────────
+// SKILLS (master table)
+// ─────────────────────────────────────────────
+model Skill {
+  id       String @id @default(uuid()) @db.VarChar(36)
+  name     String @unique @db.VarChar(100)
+  category String @db.VarChar(100)
+
+  freelancerSkills FreelancerSkill[]
+  projectSkills    ProjectSkill[]
+
+  @@index([category])
+  @@map("skills")
+}
+
+// ─────────────────────────────────────────────
+// FREELANCER_SKILLS (many-to-many junction)
+// ─────────────────────────────────────────────
+model FreelancerSkill {
+  freelancerId String @db.VarChar(36)
+  skillId      String @db.VarChar(36)
+  proficiency  Int    @default(3) // 1-5 scale
+
+  freelancer Freelancer @relation(fields: [freelancerId], references: [id], onDelete: Cascade)
+  skill      Skill      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([freelancerId, skillId])
+  @@map("freelancer_skills")
+}
+
+// ─────────────────────────────────────────────
+// PORTFOLIO
+// ─────────────────────────────────────────────
+model Portfolio {
+  id           String  @id @default(uuid()) @db.VarChar(36)
+  freelancerId String  @db.VarChar(36)
+  title        String  @db.VarChar(255)
+  description  String? @db.Text
+  projectUrl   String? @db.VarChar(500)
+  imageUrl     String? @db.VarChar(500)
+  category     String? @db.VarChar(100)
+
+  freelancer Freelancer @relation(fields: [freelancerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("portfolio")
+}
+
+// ─────────────────────────────────────────────
+// PROJECTS
+// ─────────────────────────────────────────────
+model Project {
+  id             String        @id @default(uuid()) @db.VarChar(36)
+  clientId       String        @db.VarChar(36)
+  title          String        @db.VarChar(255)
+  description    String        @db.Text
+  category       String        @db.VarChar(100)
+  budgetMin      Decimal       @db.Decimal(10, 2)
+  budgetMax      Decimal       @db.Decimal(10, 2)
+  deadline       DateTime
+  status         ProjectStatus @default(OPEN)
+  totalBids      Int           @default(0)
+  acceptedBidId  String?       @unique @db.VarChar(36)
+
+  client   Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  skills   ProjectSkill[]
+  bids     Bid[]
+  contract Contract?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+  @@index([category])
+  @@map("projects")
+}
+
+// ─────────────────────────────────────────────
+// PROJECT_SKILLS (many-to-many junction)
+// ─────────────────────────────────────────────
+model ProjectSkill {
+  projectId String @db.VarChar(36)
+  skillId   String @db.VarChar(36)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  skill   Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, skillId])
+  @@map("project_skills")
+}
+
+// ─────────────────────────────────────────────
+// BIDS
+// ─────────────────────────────────────────────
+model Bid {
+  id           String    @id @default(uuid()) @db.VarChar(36)
+  projectId    String    @db.VarChar(36)
+  freelancerId String    @db.VarChar(36)
+  proposal     String    @db.Text
+  bidAmount    Decimal   @db.Decimal(10, 2)
+  deliveryDays Int
+  status       BidStatus @default(PENDING)
+
+  project    Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  freelancer Freelancer @relation(fields: [freelancerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, freelancerId])
+  @@index([projectId])
+  @@index([freelancerId])
+  @@index([status])
+  @@map("bids")
+}
+
+// ─────────────────────────────────────────────
+// CONTRACTS
+// ─────────────────────────────────────────────
+model Contract {
+  id           String         @id @default(uuid()) @db.VarChar(36)
+  projectId    String         @unique @db.VarChar(36)
+  freelancerId String         @db.VarChar(36)
+  agreedAmount Decimal        @db.Decimal(10, 2)
+  startDate    DateTime       @default(now())
+  endDate      DateTime
+  status       ContractStatus @default(ACTIVE)
+  terms        String?        @db.Text
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  freelancer Freelancer  @relation(fields: [freelancerId], references: [id])
+  milestones Milestone[]
+  payments   Payment[]
+  review     Review?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([freelancerId])
+  @@index([status])
+  @@map("contracts")
+}
+
+// ─────────────────────────────────────────────
+// MILESTONES
+// ─────────────────────────────────────────────
+model Milestone {
+  id          String          @id @default(uuid()) @db.VarChar(36)
+  contractId  String          @db.VarChar(36)
+  title       String          @db.VarChar(255)
+  description String?         @db.Text
+  amount      Decimal         @db.Decimal(10, 2)
+  dueDate     DateTime
+  status      MilestoneStatus @default(PENDING)
+
+  contract Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  payment  Payment?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([contractId])
+  @@map("milestones")
+}
+
+// ─────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────
+model Payment {
+  id           String        @id @default(uuid()) @db.VarChar(36)
+  contractId   String        @db.VarChar(36)
+  milestoneId  String?       @unique @db.VarChar(36)
+  amount       Decimal       @db.Decimal(10, 2)
+  status       PaymentStatus @default(PENDING)
+  method       String        @default("simulated") @db.VarChar(50)
+  txRef        String?       @unique @db.VarChar(100)
+  paidAt       DateTime?
+
+  contract  Contract   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  milestone Milestone? @relation(fields: [milestoneId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([contractId])
+  @@index([status])
+  @@map("payments")
+}
+
+// ─────────────────────────────────────────────
+// REVIEWS
+// ─────────────────────────────────────────────
+model Review {
+  id           String @id @default(uuid()) @db.VarChar(36)
+  contractId   String @unique @db.VarChar(36)
+  clientId     String @db.VarChar(36)
+  freelancerId String @db.VarChar(36)
+  clientRating Int    // 1-5
+  clientText   String? @db.Text
+  freelancerRating Int? // 1-5 (freelancer rates client)
+  freelancerText   String? @db.Text
+
+  contract   Contract   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  client     Client     @relation("ClientReviews", fields: [clientId], references: [id])
+  freelancer Freelancer @relation("FreelancerReviews", fields: [freelancerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([freelancerId])
+  @@index([clientId])
+  @@map("reviews")
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────
+model Notification {
+  id         String           @id @default(uuid()) @db.VarChar(36)
+  receiverId String           @db.VarChar(36)
+  senderId   String?          @db.VarChar(36)
+  type       NotificationType
+  title      String           @db.VarChar(255)
+  message    String           @db.Text
+  isRead     Boolean          @default(false)
+  entityId   String?          @db.VarChar(36)
+  entityType String?          @db.VarChar(50)
+
+  receiver User  @relation("NotificationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender   User? @relation("NotificationSender", fields: [senderId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([receiverId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────
+// FRAUD REPORTS
+// ─────────────────────────────────────────────
+model FraudReport {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  reportedId  String    @db.VarChar(36)
+  reportType  FraudType
+  description String    @db.Text
+  isResolved  Boolean   @default(false)
+  resolvedAt  DateTime?
+
+  reported User @relation(fields: [reportedId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([reportedId])
+  @@index([isResolved])
+  @@map("fraud_reports")
+}
