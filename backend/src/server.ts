@@ -6,8 +6,8 @@ const start = async () => {
   try {
     await prisma.$connect();
     console.log('[DB] Connected to MySQL via Prisma');
-    app.listen(ENV.PORT, () => {
-      console.log(`[Server] Running on http://localhost:${ENV.PORT} (${ENV.NODE_ENV})`);
+    app.listen(ENV.PORT, '0.0.0.0', () => {
+      console.log(`[Server] Running on port ${ENV.PORT} (${ENV.NODE_ENV})`);
     });
   } catch (err) {
     console.error('[DB] Connection failed:', err);
