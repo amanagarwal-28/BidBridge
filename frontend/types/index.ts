@@ -31,7 +31,7 @@ export interface Project {
   status: ProjectStatus;
   totalBids: number;
   createdAt: string;
-  client?: { firstName: string; lastName: string; avatarUrl?: string; country?: string };
+  client?: { id?: string; firstName: string; lastName: string; avatarUrl?: string; country?: string };
   skills?: { skill: Skill }[];
   _count?: { bids: number };
   contract?: { status: ContractStatus; freelancer?: { firstName: string; lastName: string; avatarUrl?: string } };
